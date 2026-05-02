@@ -13,7 +13,7 @@ import {
 import { useAuthStore } from "../../stores/auth";
 import { useChatStore } from "../../stores/chat";
 import NewConversationModal from "./NewConversationModal.vue";
-
+import ConversationActionMenu from "./ConversationActionMenu.vue";
 const router = useRouter();
 const auth = useAuthStore();
 const chat = useChatStore();
@@ -21,7 +21,7 @@ const chat = useChatStore();
 const showNewConversationModal = ref(false);
 const keyword = ref("");
 const activeTab = ref("all");
-
+const apiUrl = import.meta.env.VITE_API_URL;
 const logout = () => {
   chat.disconnectWebSocket();
   auth.logout();
@@ -29,11 +29,16 @@ const logout = () => {
   router.push("/login");
 };
 
+const getConversationTitle = (conversation) => {
+  return (
+    conversation.display_name ||
+    conversation.name ||
+    `Cuộc trò chuyện #${conversation.id}`
+  );
+};
+
 const getAvatarText = (conversation) => {
-  if (conversation?.name) {
-    return conversation.name.charAt(0).toUpperCase();
-  }
-  return "C";
+  return getConversationTitle(conversation).charAt(0).toUpperCase();
 };
 
 const formatTime = (dateString) => {
@@ -71,7 +76,7 @@ const filteredConversations = computed(() => {
   }
 
   if (activeTab.value === "group") {
-    items = items.filter((c) => c.is_group === true);
+    items = items.filter((c) => Number(c.is_group) === 1);
   }
 
   if (keyword.value.trim()) {
@@ -86,8 +91,117 @@ const filteredConversations = computed(() => {
   return items;
 });
 
+const handleDeleteConversation = async (conversation) => {
+  const ok = confirm("Bạn có chắc muốn xóa cuộc trò chuyện này không?");
+
+  if (!ok) return;
+
+  await chat.deleteConversationForMe(conversation.id);
+};
+
 const selectConversation = async (conversation) => {
   await chat.selectConversation(conversation);
+};
+
+const openedMenuConversation = ref(null);
+const menuPosition = ref({
+  top: 0,
+  left: 0,
+});
+
+const openConversationMenu = (event, conversation) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const rect = event.currentTarget.getBoundingClientRect();
+
+  openedMenuConversation.value = conversation;
+
+  menuPosition.value = {
+    top: rect.bottom + 8,
+    left: rect.right - 330,
+    anchorTop: rect.top,
+    anchorCenterX: rect.left + rect.width / 2,
+  };
+};
+
+const closeConversationMenu = () => {
+  openedMenuConversation.value = null;
+};
+
+const getOtherUserId = (conversation) => {
+  if (Number(conversation.is_group) === 1) return null;
+
+  const currentUserId = auth.user?.id;
+
+  const other = conversation.members?.find(
+    (u) => Number(u.id) !== Number(currentUserId),
+  );
+
+  return other?.id || null;
+};
+
+const handleConversationMenuAction = async ({ action, conversation }) => {
+  closeConversationMenu();
+
+  if (action === "mark_unread") {
+    await chat.markConversationUnread(conversation.id);
+    return;
+  }
+
+  if (action === "mute") {
+    await chat.muteConversation(conversation.id);
+    return;
+  }
+
+  if (action === "archive") {
+    await chat.archiveConversation(conversation.id);
+    return;
+  }
+
+  if (action === "delete") {
+    const ok = confirm("Bạn có chắc muốn xóa đoạn chat này không?");
+
+    if (!ok) return;
+
+    await chat.deleteConversationForMe(conversation.id);
+    return;
+  }
+
+  if (action === "block") {
+    const otherUserId = getOtherUserId(conversation);
+
+    if (!otherUserId) {
+      alert("Chức năng chặn chỉ áp dụng cho chat cá nhân.");
+      return;
+    }
+
+    const ok = confirm("Bạn có chắc muốn chặn người này không?");
+
+    if (!ok) return;
+
+    await chat.blockUser(otherUserId);
+    return;
+  }
+
+  if (action === "audio_call") {
+    alert("Phần gọi thoại sẽ gắn WebRTC ở bước sau.");
+    return;
+  }
+
+  if (action === "video_call") {
+    alert("Phần video call sẽ gắn WebRTC ở bước sau.");
+    return;
+  }
+
+  if (action === "profile") {
+    alert("Phần trang cá nhân sẽ làm ở bước sau.");
+    return;
+  }
+
+  if (action === "report") {
+    alert("Phần báo cáo sẽ làm ở bước sau.");
+  }
 };
 </script>
 
@@ -98,9 +212,7 @@ const selectConversation = async (conversation) => {
     <!-- Header -->
     <div class="px-5 pt-6 pb-4">
       <div class="flex items-center justify-between">
-        <h1 class="text-[22px] font-bold tracking-tight">
-          Đoạn chat
-        </h1>
+        <h1 class="text-[22px] font-bold tracking-tight">Đoạn chat</h1>
 
         <div class="flex items-center gap-2">
           <button
@@ -130,9 +242,7 @@ const selectConversation = async (conversation) => {
 
       <!-- Search -->
       <div class="mt-5">
-        <div
-          class="h-11 rounded-full bg-white/10 flex items-center px-4 gap-3"
-        >
+        <div class="h-11 rounded-full bg-white/10 flex items-center px-4 gap-3">
           <Search class="w-5 h-5 text-gray-400" />
           <input
             v-model="keyword"
@@ -148,9 +258,11 @@ const selectConversation = async (conversation) => {
         <button
           type="button"
           class="px-4 h-10 rounded-full text-[15px] font-semibold transition"
-          :class="activeTab === 'all'
-            ? 'bg-[#263951] text-[#5aa7ff]'
-            : 'text-gray-200 hover:bg-white/10'"
+          :class="
+            activeTab === 'all'
+              ? 'bg-[#263951] text-[#5aa7ff]'
+              : 'text-gray-200 hover:bg-white/10'
+          "
           @click="activeTab = 'all'"
         >
           Tất cả
@@ -159,9 +271,11 @@ const selectConversation = async (conversation) => {
         <button
           type="button"
           class="px-4 h-10 rounded-full text-[15px] font-semibold transition"
-          :class="activeTab === 'unread'
-            ? 'bg-[#263951] text-[#5aa7ff]'
-            : 'text-gray-200 hover:bg-white/10'"
+          :class="
+            activeTab === 'unread'
+              ? 'bg-[#263951] text-[#5aa7ff]'
+              : 'text-gray-200 hover:bg-white/10'
+          "
           @click="activeTab = 'unread'"
         >
           Chưa đọc
@@ -170,9 +284,11 @@ const selectConversation = async (conversation) => {
         <button
           type="button"
           class="px-4 h-10 rounded-full text-[15px] font-semibold transition"
-          :class="activeTab === 'group'
-            ? 'bg-[#263951] text-[#5aa7ff]'
-            : 'text-gray-200 hover:bg-white/10'"
+          :class="
+            activeTab === 'group'
+              ? 'bg-[#263951] text-[#5aa7ff]'
+              : 'text-gray-200 hover:bg-white/10'
+          "
           @click="activeTab = 'group'"
         >
           Nhóm
@@ -193,20 +309,33 @@ const selectConversation = async (conversation) => {
         v-for="conversation in filteredConversations"
         :key="conversation.id"
         type="button"
-        class="w-full rounded-2xl px-3 py-3 flex items-center gap-3 text-left transition mb-1"
+        class="group w-full rounded-2xl px-3 py-3 flex items-center gap-3 text-left transition mb-1"
         :class="
           Number(chat.selectedConversation?.id) === Number(conversation.id)
             ? 'bg-[#263951]'
             : 'hover:bg-white/5'
         "
         @click="selectConversation(conversation)"
+        @contextmenu.prevent="openConversationMenu($event, conversation)"
       >
         <!-- Avatar -->
         <div class="relative shrink-0">
           <div
-            class="w-16 h-16 rounded-full bg-gradient-to-br from-[#5f8dff] to-[#3f5df3] flex items-center justify-center text-white text-[26px] font-semibold"
+            class="w-16 h-16 rounded-full bg-gradient-to-br from-[#5f8dff] to-[#3f5df3] overflow-hidden flex items-center justify-center text-white text-[26px] font-semibold"
           >
-            {{ getAvatarText(conversation) }}
+            <img
+              v-if="conversation.display_avatar"
+              :src="
+                conversation.display_avatar.startsWith('http')
+                  ? conversation.display_avatar
+                  : `${apiUrl}${conversation.display_avatar}`
+              "
+              class="w-full h-full object-cover"
+            />
+
+            <span v-else>
+              {{ getAvatarText(conversation) }}
+            </span>
           </div>
 
           <!-- Online dot demo -->
@@ -221,7 +350,11 @@ const selectConversation = async (conversation) => {
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
               <p class="text-[17px] font-semibold text-white truncate">
-                {{ conversation.name }}
+                {{
+                  conversation.display_name ||
+                  conversation.name ||
+                  `Cuộc trò chuyện #${conversation.id}`
+                }}
               </p>
             </div>
 
@@ -241,24 +374,43 @@ const selectConversation = async (conversation) => {
           <div class="mt-1 flex items-center justify-between gap-2">
             <p
               class="text-[15px] truncate"
-              :class="(conversation.unread_count || 0) > 0
-                ? 'text-white font-medium'
-                : 'text-gray-400'"
+              :class="
+                (conversation.unread_count || 0) > 0
+                  ? 'text-white font-medium'
+                  : 'text-gray-400'
+              "
             >
               {{ getLastMessagePreview(conversation) }}
             </p>
 
             <div class="shrink-0 flex items-center gap-2">
               <span class="text-[14px] text-gray-400">
-                {{ formatTime(conversation.last_message?.created_at || conversation.created_at) }}
+                {{
+                  formatTime(
+                    conversation.last_message?.created_at ||
+                      conversation.created_at,
+                  )
+                }}
               </span>
 
               <span
                 v-if="(conversation.unread_count || 0) > 0"
                 class="min-w-6 h-6 px-1 rounded-full bg-[#2d88ff] text-white text-[12px] font-semibold flex items-center justify-center"
               >
-                {{ conversation.unread_count > 99 ? "99+" : conversation.unread_count }}
+                {{
+                  conversation.unread_count > 99
+                    ? "99+"
+                    : conversation.unread_count
+                }}
               </span>
+
+              <button
+                type="button"
+                class="w-8 h-8 rounded-full hover:bg-white/10 hidden group-hover:flex items-center justify-center"
+                @click="openConversationMenu($event, conversation)"
+              >
+                <Ellipsis class="w-5 h-5 text-gray-300" />
+              </button>
             </div>
           </div>
         </div>
@@ -271,6 +423,14 @@ const selectConversation = async (conversation) => {
         Không có cuộc trò chuyện nào
       </div>
     </div>
+
+    <ConversationActionMenu
+      v-if="openedMenuConversation"
+      :conversation="openedMenuConversation"
+      :position="menuPosition"
+      @close="closeConversationMenu"
+      @action="handleConversationMenuAction"
+    />
 
     <NewConversationModal
       v-if="showNewConversationModal"

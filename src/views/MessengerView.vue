@@ -5,7 +5,9 @@ import { useChatStore } from "../stores/chat";
 
 import ChatSidebar from "../components/chat/ChatSidebar.vue";
 import ChatWindow from "../components/chat/ChatWindow.vue";
-
+import ChatInfoPanel from "../components/chat/ChatInfoPanel.vue";
+import VideoCallModal from "../components/chat/VideoCallModal.vue";
+import AppToast from "../components/common/AppToast.vue";
 const auth = useAuthStore();
 const chat = useChatStore();
 
@@ -30,5 +32,8 @@ onBeforeUnmount(() => {
   <div class="h-screen w-screen overflow-hidden bg-[#111214] flex">
     <ChatSidebar />
     <ChatWindow />
+    <ChatInfoPanel />
+    <VideoCallModal />
+    <AppToast />
   </div>
 </template>

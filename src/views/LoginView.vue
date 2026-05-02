@@ -32,7 +32,7 @@ const handleLogin = async () => {
   <div class="min-h-screen flex items-center justify-center bg-slate-100 px-4">
     <div class="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
       <h1 class="text-3xl font-bold text-blue-600 text-center mb-2">
-        Messenger Clone
+        Messenger
       </h1>
 
       <p class="text-center text-gray-500 mb-8">

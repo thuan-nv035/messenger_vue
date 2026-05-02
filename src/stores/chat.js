@@ -20,13 +20,20 @@ export const useChatStore = defineStore("chat", {
     replyToMessage: null,
     editingMessage: null,
 
+    incomingCall: null,
+    activeCall: null,
+    callEvent: null,
+    callTimeoutTimer: null,
+
+    toast: null,
     loadingConversations: false,
     loadingMessages: false,
     error: "",
   }),
 
   actions: {
-    async fetchConversations() {
+    async fetchConversations(options = {}) {
+      const { autoSelect = true } = options;
       try {
         this.loadingConversations = true;
         this.error = "";
@@ -35,7 +42,11 @@ export const useChatStore = defineStore("chat", {
 
         this.conversations = res.data;
 
-        if (!this.selectedConversation && this.conversations.length > 0) {
+        if (
+          autoSelect &&
+          !this.selectedConversation &&
+          this.conversations.length > 0
+        ) {
           await this.selectConversation(this.conversations[0]);
         }
 
@@ -89,6 +100,7 @@ export const useChatStore = defineStore("chat", {
 
         return res.data;
       } catch (err) {
+        console.error(err);
         this.error = err.response?.data?.detail || "Không tải được tin nhắn";
       } finally {
         this.loadingMessages = false;
@@ -241,6 +253,104 @@ export const useChatStore = defineStore("chat", {
       if (data.type === "notification") {
         console.log("Notification:", data.data);
       }
+
+      if (data.type === "incoming_call") {
+        this.incomingCall = data;
+        return;
+      }
+
+      if (data.type === "call_accepted") {
+        if (this.activeCall) {
+          this.activeCall.status = "accepted";
+          this.activeCall.call_id = data.call_id;
+          this.activeCall.remote_user_id = data.user_id;
+        }
+
+        this.callEvent = {
+          type: "call_accepted",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "call_rejected") {
+        this.callEvent = {
+          type: "call_rejected",
+          data,
+          ts: Date.now(),
+        };
+
+        this.activeCall = null;
+        this.incomingCall = null;
+
+        this.showToast("Người dùng đã từ chối cuộc gọi", "warning");
+
+        return;
+      }
+
+      if (data.type === "call_ended") {
+        this.callEvent = {
+          type: "call_ended",
+          data,
+          ts: Date.now(),
+        };
+
+        this.activeCall = null;
+        this.incomingCall = null;
+
+        if (data.status === "missed") {
+          this.showToast("Cuộc gọi nhỡ", "warning");
+        }
+
+        return;
+      }
+
+      if (
+        data.type === "webrtc_offer" ||
+        data.type === "webrtc_answer" ||
+        data.type === "ice_candidate"
+      ) {
+        this.callEvent = {
+          type: data.type,
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "call_started") {
+        if (this.activeCall) {
+          this.activeCall.call_id = data.call_id;
+          this.activeCall.status = "calling";
+        }
+
+        this.callEvent = {
+          type: "call_started",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "call_failed") {
+        this.callEvent = {
+          type: "call_failed",
+          data,
+          ts: Date.now(),
+        };
+
+        this.activeCall = null;
+        this.incomingCall = null;
+        this.error = data.message;
+
+        this.showToast(data.message || "Không thể thực hiện cuộc gọi", "error");
+
+        return;
+      }
     },
 
     handleIncomingMessage(data) {
@@ -259,6 +369,8 @@ export const useChatStore = defineStore("chat", {
         is_edited: data.is_edited || 0,
         edited_at: data.edited_at || null,
         edit_count: data.edit_count || 0,
+        message_type: data.message_type || "text",
+        call_status: data.call_status || null,
         created_at: data.created_at,
       };
 
@@ -266,7 +378,9 @@ export const useChatStore = defineStore("chat", {
         Number(this.selectedConversation?.id) === Number(data.conversation_id);
 
       if (isCurrentConversation) {
-        const exists = this.messages.some((m) => m.id === message.id);
+        const exists = this.messages.some(
+          (m) => Number(m.id) === Number(message.id),
+        );
 
         if (!exists) {
           this.messages.push(message);
@@ -277,11 +391,21 @@ export const useChatStore = defineStore("chat", {
         }
       }
 
-      this.updateConversationLastMessage(message);
-
       const conversation = this.conversations.find(
-        (c) => c.id === message.conversation_id,
+        (c) => Number(c.id) === Number(message.conversation_id),
       );
+
+      // Nếu conversation đã bị user xóa khỏi sidebar,
+      // nhưng người kia nhắn tin mới thì phải load lại danh sách chat.
+      if (!conversation && message.sender_id !== currentUserId) {
+        this.fetchConversations({
+          autoSelect: false,
+        });
+
+        return;
+      }
+
+      this.updateConversationLastMessage(message);
 
       if (
         conversation &&
@@ -291,7 +415,6 @@ export const useChatStore = defineStore("chat", {
         conversation.unread_count = (conversation.unread_count || 0) + 1;
       }
     },
-
     updateConversationLastMessage(message) {
       const conversation = this.conversations.find(
         (c) => Number(c.id) === Number(message.conversation_id),
@@ -301,7 +424,9 @@ export const useChatStore = defineStore("chat", {
 
       let content = "";
 
-      if (message.is_recalled === 1) {
+      if (message.message_type === "call") {
+        content = message.content;
+      } else if (message.is_recalled === 1) {
         content = "Tin nhắn đã được thu hồi";
       } else if (message.content) {
         content = message.content;
@@ -657,7 +782,7 @@ export const useChatStore = defineStore("chat", {
     async createConversation({ memberIds, name = null, isGroup = false }) {
       try {
         this.error = "";
-        console.log('memberIds', memberIds)
+
         const res = await api.post("/conversations", {
           member_ids: memberIds,
           name,
@@ -666,12 +791,12 @@ export const useChatStore = defineStore("chat", {
 
         await this.fetchConversations();
 
-        const newConversation = this.conversations.find(
+        const conversation = this.conversations.find(
           (c) => Number(c.id) === Number(res.data.conversation_id),
         );
 
-        if (newConversation) {
-          await this.selectConversation(newConversation);
+        if (conversation) {
+          await this.selectConversation(conversation);
         }
 
         return res.data;
@@ -680,6 +805,271 @@ export const useChatStore = defineStore("chat", {
           err.response?.data?.detail || "Không tạo được cuộc trò chuyện";
         throw err;
       }
+    },
+    async deleteConversationForMe(conversationId) {
+      try {
+        await api.delete(`/conversations/${conversationId}/delete-for-me`);
+
+        this.conversations = this.conversations.filter(
+          (c) => Number(c.id) !== Number(conversationId),
+        );
+
+        if (Number(this.selectedConversation?.id) === Number(conversationId)) {
+          this.selectedConversation = null;
+          this.messages = [];
+        }
+      } catch (err) {
+        this.error =
+          err.response?.data?.detail || "Không xóa được cuộc trò chuyện";
+        throw err;
+      }
+    },
+    async searchUsers(q = "") {
+      try {
+        const res = await api.get("/users/search", {
+          params: {
+            q,
+            limit: 20,
+          },
+        });
+        console.log("res.data", res.data);
+        return res.data;
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không tìm được user";
+        return [];
+      }
+    },
+
+    async archiveConversation(conversationId) {
+      try {
+        await api.post(`/archive/conversations/${conversationId}`);
+
+        this.conversations = this.conversations.filter(
+          (c) => Number(c.id) !== Number(conversationId),
+        );
+
+        if (Number(this.selectedConversation?.id) === Number(conversationId)) {
+          this.selectedConversation = null;
+          this.messages = [];
+        }
+      } catch (err) {
+        this.error =
+          err.response?.data?.detail || "Không lưu trữ được đoạn chat";
+        throw err;
+      }
+    },
+
+    async muteConversation(conversationId) {
+      try {
+        await api.post(`/mute/conversations/${conversationId}`);
+
+        const c = this.conversations.find(
+          (item) => Number(item.id) === Number(conversationId),
+        );
+
+        if (c) {
+          c.is_muted = true;
+        }
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không tắt thông báo được";
+        throw err;
+      }
+    },
+
+    async markConversationUnread(conversationId) {
+      const c = this.conversations.find(
+        (item) => Number(item.id) === Number(conversationId),
+      );
+
+      if (c) {
+        c.unread_count = Math.max(c.unread_count || 0, 1);
+      }
+    },
+
+    async blockUser(userId) {
+      try {
+        await api.post(`/block/${userId}`);
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không chặn được user";
+        throw err;
+      }
+    },
+
+    async fetchConversationMedia(conversationId) {
+      try {
+        const res = await api.get(`/conversations/${conversationId}/media`);
+        return res.data;
+      } catch (err) {
+        this.error =
+          err.response?.data?.detail || "Không tải được file phương tiện";
+        return [];
+      }
+    },
+
+    async uploadChatFile(file) {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await api.post("/upload", formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+
+        return res.data;
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không upload được file";
+        throw err;
+      }
+    },
+
+    sendSocket(payload) {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.error = "WebSocket chưa kết nối";
+        return false;
+      }
+
+      this.ws.send(JSON.stringify(payload));
+      return true;
+    },
+
+    getOtherUserId(conversation) {
+      const user = JSON.parse(localStorage.getItem("user"));
+      const currentUserId = user?.id;
+
+      if (!conversation || Number(conversation.is_group) === 1) {
+        return null;
+      }
+
+      const other = conversation.members?.find(
+        (u) => Number(u.id) !== Number(currentUserId),
+      );
+
+      return other?.id || null;
+    },
+
+    startVideoCall(conversation) {
+      const receiverId = this.getOtherUserId(conversation);
+
+      if (!receiverId) {
+        this.error = "Chỉ hỗ trợ gọi 1-1 ở bước này";
+        return;
+      }
+
+      this.activeCall = {
+        call_id: null,
+        conversation_id: conversation.id,
+        receiver_id: receiverId,
+        remote_user_id: receiverId,
+        call_type: "video",
+        status: "calling",
+        isCaller: true,
+      };
+
+      this.sendSocket({
+        type: "call_request",
+        receiver_id: receiverId,
+        conversation_id: conversation.id,
+        call_type: "video",
+      });
+    },
+
+    acceptCall() {
+      if (!this.incomingCall) return;
+
+      const call = this.incomingCall;
+
+      this.activeCall = {
+        call_id: call.call_id,
+        conversation_id: call.conversation_id,
+        receiver_id: call.caller_id,
+        remote_user_id: call.caller_id,
+        call_type: call.call_type || "video",
+        status: "accepted",
+        isCaller: false,
+      };
+
+      this.sendSocket({
+        type: "call_accept",
+        call_id: call.call_id,
+        receiver_id: call.caller_id,
+        conversation_id: call.conversation_id,
+      });
+
+      this.incomingCall = null;
+    },
+
+    rejectCall() {
+      if (!this.incomingCall) return;
+
+      const call = this.incomingCall;
+
+      this.sendSocket({
+        type: "call_reject",
+        call_id: call.call_id,
+        receiver_id: call.caller_id,
+        conversation_id: call.conversation_id,
+      });
+
+      this.incomingCall = null;
+    },
+
+    endCall() {
+      if (!this.activeCall) return;
+
+      if (this.activeCall.call_id) {
+        this.sendSocket({
+          type: "call_end",
+          call_id: this.activeCall.call_id,
+          receiver_id:
+            this.activeCall.remote_user_id || this.activeCall.receiver_id,
+          conversation_id: this.activeCall.conversation_id,
+        });
+      }
+
+      this.activeCall = null;
+    },
+
+    sendWebRTCOffer(receiverId, offer) {
+      this.sendSocket({
+        type: "webrtc_offer",
+        receiver_id: receiverId,
+        conversation_id: this.activeCall?.conversation_id,
+        offer,
+      });
+    },
+
+    sendWebRTCAnswer(receiverId, answer) {
+      this.sendSocket({
+        type: "webrtc_answer",
+        receiver_id: receiverId,
+        conversation_id: this.activeCall?.conversation_id,
+        answer,
+      });
+    },
+
+    sendIceCandidate(receiverId, candidate) {
+      this.sendSocket({
+        type: "ice_candidate",
+        receiver_id: receiverId,
+        conversation_id: this.activeCall?.conversation_id,
+        candidate,
+      });
+    },
+
+    showToast(message, type = "info") {
+      this.toast = {
+        message,
+        type,
+        ts: Date.now(),
+      };
+
+      setTimeout(() => {
+        if (this.toast?.message === message) {
+          this.toast = null;
+        }
+      }, 3000);
     },
 
     clearChat() {
