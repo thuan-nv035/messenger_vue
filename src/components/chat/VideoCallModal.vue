@@ -41,7 +41,7 @@ const initPeer = async () => {
   await nextTick();
 
   localStream.value = await navigator.mediaDevices.getUserMedia({
-    video: true,
+    video: !isAudioCall.value,
     audio: true,
   });
 
@@ -208,6 +208,7 @@ const toggleMic = () => {
 };
 
 const toggleCamera = () => {
+  if (isAudioCall.value) return;
   if (!localStream.value) return;
 
   cameraEnabled.value = !cameraEnabled.value;
@@ -389,6 +390,15 @@ watch(
     }
   },
 );
+
+const isAudioCall = computed(() => {
+  const call = chat.activeCall || chat.incomingCall;
+  return call?.call_type === "audio";
+});
+
+const callTitle = computed(() => {
+  return isAudioCall.value ? "Cuộc gọi thoại" : "Cuộc gọi video";
+});
 </script>
 
 <template>
@@ -407,7 +417,7 @@ watch(
         C
       </div>
 
-      <h2 class="text-xl font-semibold mt-4">Cuộc gọi video đến</h2>
+      <h2 class="text-xl font-semibold mt-4">{{ callTitle }} đến</h2>
 
       <p class="text-gray-400 text-sm mt-1">
         User #{{ chat.incomingCall.caller_id }} đang gọi cho bạn
@@ -427,7 +437,9 @@ watch(
           class="w-14 h-14 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center"
           @click="acceptCall"
         >
-          <Video class="w-6 h-6 text-white" />
+          <Video v-if="!isAudioCall" class="w-6 h-6 text-white" />
+
+          <Mic v-else class="w-6 h-6 text-white" />
         </button>
       </div>
     </div>
@@ -437,12 +449,52 @@ watch(
       v-else
       class="relative w-[90vw] max-w-5xl h-[80vh] bg-[#111214] rounded-3xl overflow-hidden shadow-2xl border border-white/10"
     >
-      <video
-        ref="remoteVideo"
-        autoplay
-        playsinline
-        class="w-full h-full object-cover bg-black"
-      ></video>
+      <template v-if="!isAudioCall">
+        <video
+          ref="remoteVideo"
+          autoplay
+          playsinline
+          class="w-full h-full object-cover bg-black"
+        ></video>
+
+        <div
+          class="absolute right-5 top-5 w-48 h-32 bg-black rounded-2xl overflow-hidden border border-white/20 shadow-xl"
+        >
+          <video
+            ref="localVideo"
+            autoplay
+            playsinline
+            muted
+            class="w-full h-full object-cover"
+          ></video>
+        </div>
+      </template>
+
+      <template v-else>
+        <audio ref="remoteVideo" autoplay playsinline></audio>
+
+        <div
+          class="w-full h-full flex flex-col items-center justify-center bg-[#111214] text-white"
+        >
+          <div
+            class="w-32 h-32 rounded-full bg-gradient-to-br from-[#5f8dff] to-[#3f5df3] flex items-center justify-center text-5xl font-bold mb-5"
+          >
+            C
+          </div>
+
+          <h2 class="text-2xl font-semibold">Cuộc gọi thoại</h2>
+
+          <p class="text-gray-400 mt-2">
+            <span v-if="chat.activeCall?.status === 'calling'">
+              Đang gọi...
+            </span>
+
+            <span v-else>
+              {{ formatCallDuration }}
+            </span>
+          </p>
+        </div>
+      </template>
 
       <div
         class="absolute right-5 top-5 w-48 h-32 bg-black rounded-2xl overflow-hidden border border-white/20 shadow-xl"
@@ -479,6 +531,7 @@ watch(
         </button>
 
         <button
+          v-if="!isAudioCall"
           type="button"
           class="w-12 h-12 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center"
           @click="toggleCamera"

@@ -1072,6 +1072,33 @@ export const useChatStore = defineStore("chat", {
       }, 3000);
     },
 
+    startAudioCall(conversation) {
+      const receiverId = this.getOtherUserId(conversation);
+
+      if (!receiverId) {
+        this.error = "Chỉ hỗ trợ gọi thoại 1-1";
+        this.showToast("Chỉ hỗ trợ gọi thoại 1-1", "warning");
+        return;
+      }
+
+      this.activeCall = {
+        call_id: null,
+        conversation_id: conversation.id,
+        receiver_id: receiverId,
+        remote_user_id: receiverId,
+        call_type: "audio",
+        status: "calling",
+        isCaller: true,
+      };
+
+      this.sendSocket({
+        type: "call_request",
+        receiver_id: receiverId,
+        conversation_id: conversation.id,
+        call_type: "audio",
+      });
+    },
+
     clearChat() {
       this.selectedConversation = null;
       this.messages = [];

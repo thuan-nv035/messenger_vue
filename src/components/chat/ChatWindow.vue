@@ -321,6 +321,17 @@ const startVideoCall = () => {
 
   chat.startVideoCall(chat.selectedConversation);
 };
+
+const startAudioCall = () => {
+  if (!chat.selectedConversation) return;
+
+  if (Number(chat.selectedConversation.is_group) === 1) {
+    chat.showToast("Bước này mới hỗ trợ gọi thoại 1-1", "warning");
+    return;
+  }
+
+  chat.startAudioCall(chat.selectedConversation);
+};
 </script>
 
 <template>
@@ -355,6 +366,7 @@ const startVideoCall = () => {
           <button
             type="button"
             class="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition"
+            @click="startAudioCall"
           >
             <Phone class="w-5 h-5 text-[#2d88ff]" />
           </button>
