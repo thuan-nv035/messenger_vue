@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from "vue";
-import { X } from "lucide-vue-next";
+import { ref, computed, watch, onMounted } from "vue";
+import { X, Search, Check } from "lucide-vue-next";
 import { useChatStore } from "../../stores/chat";
 
 const emit = defineEmits(["close"]);
@@ -8,84 +8,165 @@ const emit = defineEmits(["close"]);
 const chat = useChatStore();
 
 const mode = ref("private");
-const userIdsText = ref("");
 const groupName = ref("");
-const loading = ref(false);
+const searchText = ref("");
+const users = ref([]);
+const selectedUsers = ref([]);
+const loadingUsers = ref(false);
+const loadingCreate = ref(false);
 const error = ref("");
 
-const parseUserIds = () => {
-  return userIdsText.value
-    .split(",")
-    .map((id) => Number(id.trim()))
-    .filter((id) => !Number.isNaN(id) && id > 0);
+let searchTimer = null;
+
+const isGroup = computed(() => mode.value === "group");
+
+const selectedUserIds = computed(() => {
+  return selectedUsers.value.map((u) => u.id);
+});
+
+const avatarUrl = (user) => {
+  if (!user.avatar) return null;
+
+  if (user.avatar.startsWith("http")) {
+    return user.avatar;
+  }
+
+  return `${import.meta.env.VITE_API_URL}${user.avatar}`;
+};
+
+const avatarText = (user) => {
+  return user.full_name?.charAt(0).toUpperCase() || "U";
+};
+
+const isSelected = (user) => {
+  return selectedUsers.value.some((u) => Number(u.id) === Number(user.id));
+};
+
+const loadUsers = async () => {
+  loadingUsers.value = true;
+
+  try {
+    users.value = await chat.searchUsers(searchText.value);
+  } finally {
+    loadingUsers.value = false;
+  }
+};
+
+watch(searchText, () => {
+  clearTimeout(searchTimer);
+
+  searchTimer = setTimeout(() => {
+    loadUsers();
+  }, 300);
+});
+
+watch(mode, () => {
+  selectedUsers.value = [];
+  error.value = "";
+});
+
+onMounted(() => {
+  loadUsers();
+});
+
+const toggleUser = (user) => {
+  error.value = "";
+
+  if (mode.value === "private") {
+    selectedUsers.value = [user];
+    return;
+  }
+
+  if (isSelected(user)) {
+    selectedUsers.value = selectedUsers.value.filter(
+      (u) => Number(u.id) !== Number(user.id)
+    );
+  } else {
+    selectedUsers.value.push(user);
+  }
+};
+
+const removeSelectedUser = (user) => {
+  selectedUsers.value = selectedUsers.value.filter(
+    (u) => Number(u.id) !== Number(user.id)
+  );
 };
 
 const handleCreate = async () => {
   try {
-    loading.value = true;
+    loadingCreate.value = true;
     error.value = "";
 
-    const memberIds = parseUserIds();
-    console.log('memberIds', memberIds)
-    if (memberIds.length === 0) {
-      error.value = "Vui lòng nhập ít nhất 1 user_id";
+    if (selectedUsers.value.length === 0) {
+      error.value = "Vui lòng chọn ít nhất 1 người dùng";
       return;
     }
 
-    const isGroup = mode.value === "group";
-
-    if (isGroup && !groupName.value.trim()) {
-      error.value = "Vui lòng nhập tên nhóm";
+    if (mode.value === "private" && selectedUsers.value.length !== 1) {
+      error.value = "Chat cá nhân chỉ được chọn 1 người";
       return;
+    }
+
+    if (mode.value === "group") {
+      if (selectedUsers.value.length < 2) {
+        error.value = "Chat nhóm cần chọn ít nhất 2 người";
+        return;
+      }
+
+      if (!groupName.value.trim()) {
+        error.value = "Vui lòng nhập tên nhóm";
+        return;
+      }
     }
 
     await chat.createConversation({
-      memberIds,
-      name: isGroup ? groupName.value.trim() : null,
-      isGroup,
+      memberIds: selectedUserIds.value,
+      name: isGroup.value ? groupName.value.trim() : null,
+      isGroup: isGroup.value,
     });
 
     emit("close");
   } catch (err) {
     error.value =
       err.response?.data?.detail || "Không tạo được cuộc trò chuyện";
-    alert(error.value)
   } finally {
-    loading.value = false;
+    loadingCreate.value = false;
   }
 };
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
-    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
-      <div class="px-5 py-4 border-b flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">
+  <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4">
+    <div class="bg-[#242526] text-white w-full max-w-xl rounded-2xl shadow-xl overflow-hidden border border-white/10">
+      <!-- Header -->
+      <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+        <h2 class="text-lg font-semibold">
           Tạo cuộc trò chuyện mới
         </h2>
 
         <button
           type="button"
-          class="w-9 h-9 rounded-full hover:bg-gray-100 flex items-center justify-center"
+          class="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center"
           @click="emit('close')"
         >
-          <X class="w-5 h-5 text-gray-600" />
+          <X class="w-5 h-5 text-gray-300" />
         </button>
       </div>
 
       <form @submit.prevent="handleCreate" class="p-5 space-y-4">
+        <!-- Mode -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">
+          <label class="block text-sm font-medium text-gray-300 mb-2">
             Loại cuộc trò chuyện
           </label>
 
           <div class="grid grid-cols-2 gap-2">
             <button
               type="button"
-              class="py-2 rounded-xl border text-sm font-medium"
+              class="py-3 rounded-xl border text-sm font-semibold transition"
               :class="mode === 'private'
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-gray-700 hover:bg-gray-50'"
+                ? 'bg-[#2d88ff] text-white border-[#2d88ff]'
+                : 'bg-transparent text-gray-300 border-white/10 hover:bg-white/10'"
               @click="mode = 'private'"
             >
               Chat cá nhân
@@ -93,10 +174,10 @@ const handleCreate = async () => {
 
             <button
               type="button"
-              class="py-2 rounded-xl border text-sm font-medium"
+              class="py-3 rounded-xl border text-sm font-semibold transition"
               :class="mode === 'group'
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-gray-700 hover:bg-gray-50'"
+                ? 'bg-[#2d88ff] text-white border-[#2d88ff]'
+                : 'bg-transparent text-gray-300 border-white/10 hover:bg-white/10'"
               @click="mode = 'group'"
             >
               Nhóm
@@ -104,8 +185,9 @@ const handleCreate = async () => {
           </div>
         </div>
 
-        <div v-if="mode === 'group'">
-          <label class="block text-sm font-medium text-gray-700 mb-1">
+        <!-- Group name -->
+        <div v-if="isGroup">
+          <label class="block text-sm font-medium text-gray-300 mb-1">
             Tên nhóm
           </label>
 
@@ -113,37 +195,109 @@ const handleCreate = async () => {
             v-model="groupName"
             type="text"
             placeholder="Ví dụ: Nhóm FastAPI"
-            class="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+            class="w-full px-4 py-3 bg-[#3A3B3C] border border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-[#2d88ff] text-white placeholder:text-gray-400"
           />
         </div>
 
+        <!-- Selected users -->
+        <div v-if="selectedUsers.length > 0" class="flex flex-wrap gap-2">
+          <button
+            v-for="user in selectedUsers"
+            :key="user.id"
+            type="button"
+            class="flex items-center gap-2 bg-[#263951] text-[#5aa7ff] px-3 py-1.5 rounded-full text-sm"
+            @click="removeSelectedUser(user)"
+          >
+            <span>{{ user.full_name }}</span>
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
+        <!-- Search -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">
-            User ID thành viên
+          <label class="block text-sm font-medium text-gray-300 mb-1">
+            Chọn người dùng
           </label>
 
-          <input
-            v-model="userIdsText"
-            type="text"
-            placeholder="Ví dụ: 2 hoặc 2,3,4"
-            class="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          <div class="h-12 rounded-xl bg-[#3A3B3C] border border-white/10 flex items-center px-4 gap-3">
+            <Search class="w-5 h-5 text-gray-400" />
 
-          <p class="text-xs text-gray-500 mt-1">
-            Nhập user_id, nếu nhiều người thì cách nhau bằng dấu phẩy.
-          </p>
+            <input
+              v-model="searchText"
+              type="text"
+              placeholder="Tìm theo tên hoặc email..."
+              class="flex-1 bg-transparent outline-none text-white placeholder:text-gray-400"
+            />
+          </div>
         </div>
 
-        <p v-if="error" class="text-sm text-red-500">
+        <!-- User list -->
+        <div class="max-h-72 overflow-y-auto space-y-1 pr-1">
+          <div
+            v-if="loadingUsers"
+            class="text-center text-gray-400 py-6"
+          >
+            Đang tải người dùng...
+          </div>
+
+          <div
+            v-else-if="users.length === 0"
+            class="text-center text-gray-400 py-6"
+          >
+            Không tìm thấy user
+          </div>
+
+          <button
+            v-for="user in users"
+            :key="user.id"
+            type="button"
+            class="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition"
+            :class="isSelected(user)
+              ? 'bg-[#263951]'
+              : 'hover:bg-white/10'"
+            @click="toggleUser(user)"
+          >
+            <div class="w-11 h-11 rounded-full bg-gradient-to-br from-[#5f8dff] to-[#3f5df3] overflow-hidden flex items-center justify-center text-white font-semibold shrink-0">
+              <img
+                v-if="avatarUrl(user)"
+                :src="avatarUrl(user)"
+                class="w-full h-full object-cover"
+              />
+
+              <span v-else>
+                {{ avatarText(user) }}
+              </span>
+            </div>
+
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold text-white truncate">
+                {{ user.full_name }}
+              </p>
+
+              <p class="text-sm text-gray-400 truncate">
+                {{ user.email }}
+              </p>
+            </div>
+
+            <div
+              v-if="isSelected(user)"
+              class="w-7 h-7 rounded-full bg-[#2d88ff] flex items-center justify-center shrink-0"
+            >
+              <Check class="w-4 h-4 text-white" />
+            </div>
+          </button>
+        </div>
+
+        <p v-if="error" class="text-sm text-red-400">
           {{ error }}
         </p>
 
         <button
           type="submit"
-          :disabled="loading"
-          class="w-full py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-60"
+          :disabled="loadingCreate"
+          class="w-full py-3 bg-[#2d88ff] text-white rounded-xl font-semibold hover:bg-[#1f6fd1] disabled:opacity-60"
         >
-          {{ loading ? "Đang tạo..." : "Tạo cuộc trò chuyện" }}
+          {{ loadingCreate ? "Đang tạo..." : "Tạo cuộc trò chuyện" }}
         </button>
       </form>
     </div>
