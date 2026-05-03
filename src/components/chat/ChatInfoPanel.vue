@@ -125,11 +125,11 @@ const isGroup = computed(() => {
 });
 
 const currentMemberIds = computed(() => {
-  return groupMembers.value.members.map((m) => m.user_id || m.id);
+  return groupMembers.value.members?.map((m) => m.user_id || m.id);
 });
 
 const myMember = computed(() => {
-  return groupMembers.value.members.find((m) => {
+  return groupMembers.value.members?.find((m) => {
     const memberUserId = m.user_id || m.id;
     return Number(memberUserId) === Number(auth.user?.id);
   });
@@ -252,6 +252,17 @@ const toggleMemberMenu = (member) => {
 const handleAddedMembers = async () => {
   await loadGroupMembers();
 };
+
+const handleDeleteConversation = async () => {
+  const ok = confirm("Bạn có chắc muốn xóa nhóm này không");
+  if (!ok) return;
+  await chat.deleteConversation(chat.selectedConversation.id);
+};
+
+const handleCreateLink = async () => {
+  await chat.createInviteLink(chat.selectedConversation.id)
+}
+
 watch(
   () => chat.selectedConversation?.id,
   async () => {
@@ -293,7 +304,7 @@ watch(
         {{ panelTitle }}
       </h3>
 
-      <p class="text-sm text-gray-400">Hoạt động gần đây</p>
+      <!-- <p class="text-sm text-gray-400">Hoạt động gần đây</p> -->
 
       <div class="flex gap-4 mt-5">
         <button
@@ -362,7 +373,7 @@ watch(
                 <Users class="w-4 h-4" />
                 Thành viên trong nhóm
                 <span class="text-gray-400">
-                  ({{ groupMembers.members.length }})
+                  ({{ groupMembers?.members?.length }})
                 </span>
               </span>
 
@@ -664,12 +675,20 @@ watch(
           </button>
 
           <button
+            @click="handleCreateLink"
+            class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 text-gray-300"
+          >
+            Tạo link nhóm
+          </button>
+
+          <button
             class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 text-red-300"
           >
             Báo cáo đoạn chat
           </button>
 
           <button
+            @click="handleDeleteConversation"
             class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 text-red-300"
           >
             Xóa đoạn chat

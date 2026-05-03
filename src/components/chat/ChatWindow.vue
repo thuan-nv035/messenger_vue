@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, nextTick, watch } from "vue";
+import { computed, ref, nextTick, watch, onMounted } from "vue";
 import {
   Phone,
   Video,
@@ -342,10 +342,17 @@ const startAudioCall = () => {
         class="h-[76px] px-6 border-b border-white/10 flex items-center justify-between bg-[#242526]"
       >
         <div class="flex items-center gap-3 min-w-0">
-          <div
-            class="w-12 h-12 rounded-full bg-gradient-to-br from-[#5f8dff] to-[#3f5df3] text-white flex items-center justify-center font-bold text-xl shrink-0"
-          >
-            {{ conversationTitle.charAt(0).toUpperCase() }}
+          <div class="relative">
+            <div
+              class="w-12 h-12 rounded-full bg-gradient-to-br from-[#5f8dff] to-[#3f5df3] text-white flex items-center justify-center font-bold text-xl shrink-0"
+            >
+              {{ conversationTitle.charAt(0).toUpperCase() }}
+            </div>
+
+            <div
+              v-if="chat.isOnline"
+              class="absolute bottom-1 right-0 w-3 h-3 rounded-full bg-[#31d158] border-2 border-[#18191A]"
+            />
           </div>
 
           <div class="min-w-0">
@@ -355,9 +362,9 @@ const startAudioCall = () => {
 
             <p
               class="text-[13px]"
-              :class="chat.wsConnected ? 'text-[#31d158]' : 'text-gray-400'"
+              :class="chat.isOnline ? 'text-[#31d158]' : 'text-gray-400'"
             >
-              {{ chat.wsConnected ? "Đang kết nối realtime" : "Mất kết nối" }}
+              {{ chat.isOnline ? "Đang hoạt động" : "Không hoạt động" }}
             </p>
           </div>
         </div>

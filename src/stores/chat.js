@@ -1,15 +1,18 @@
 import { defineStore } from "pinia";
 import api from "../api/axios";
+import axios from "axios";
 
 export const useChatStore = defineStore("chat", {
   state: () => ({
     conversations: [],
     selectedConversation: null,
     messages: [],
+    userId: JSON.parse(localStorage.getItem("user")).id,
 
     ws: null,
     wsConnected: false,
     reconnectTimer: null,
+    isOnline: false,
 
     typingUsers: {},
     typingTimers: {},
@@ -44,9 +47,8 @@ export const useChatStore = defineStore("chat", {
         this.error = "";
 
         const res = await api.get("/conversations");
-
+        console.log("res.data", res.data);
         this.conversations = res.data;
-
         if (
           autoSelect &&
           !this.selectedConversation &&
@@ -66,13 +68,18 @@ export const useChatStore = defineStore("chat", {
 
     async selectConversation(conversation) {
       this.selectedConversation = conversation;
-
+      console.log("first", conversation);
       this.messages = [];
 
       await this.fetchMessages(conversation.id);
 
       await this.markConversationAsRead(conversation.id);
-
+      if (conversation.is_group === 0) {
+        const member = conversation.members.filter(
+          (member) => member.id != this.userId,
+        );
+        await this.checkIsOnlineUser(member[0].id);
+      }
       const c = this.conversations.find((item) => item.id === conversation.id);
 
       if (c) {
@@ -1310,6 +1317,50 @@ export const useChatStore = defineStore("chat", {
         this.error = err.response?.data?.detail || "Không cập nhật được quyền";
         this.showToast(this.error, "error");
         throw err;
+      }
+    },
+
+    async deleteConversation(conversationId) {
+      try {
+        await api.delete(`/conversations/${conversationId}`);
+
+        this.conversations = this.conversations.filter(
+          (c) => Number(c.id) !== Number(conversationId),
+        );
+
+        if (Number(this.selectedConversation?.id) === Number(conversationId)) {
+          this.selectedConversation = null;
+          this.messages = [];
+        }
+
+        this.showToast("Đã xóa nhóm thành công", "success");
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không xóa được nhóm";
+        this.showToast(this.error, "error");
+        throw err;
+      }
+    },
+
+    async checkIsOnlineUser(userId) {
+      try {
+        const res = await api.get(`/users/${userId}/online`);
+        if (res.data.online) {
+          this.isOnline = true;
+        } else {
+          this.isOnline = false;
+        }
+      } catch (err) {
+        throw err;
+      }
+    },
+
+    async createInviteLink(conversationId) {
+      try {
+        const res = await api.post(`/group-invites/conversations/${conversationId}`)
+        console.log(res)
+      }catch(err) {
+        this.showToast('Bạn không có quyền tạo link', 'error')
+        throw err
       }
     },
 

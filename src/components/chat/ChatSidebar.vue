@@ -23,6 +23,7 @@ const showNewConversationModal = ref(false);
 const keyword = ref("");
 const activeTab = ref("all");
 const apiUrl = import.meta.env.VITE_API_URL;
+
 const logout = () => {
   chat.disconnectWebSocket();
   auth.logout();
@@ -182,23 +183,8 @@ const handleConversationMenuAction = async ({ action, conversation }) => {
     return;
   }
 
-  if (action === "audio_call") {
-    alert("Phần gọi thoại sẽ gắn WebRTC ở bước sau.");
-    return;
-  }
-
-  if (action === "video_call") {
-    alert("Phần video call sẽ gắn WebRTC ở bước sau.");
-    return;
-  }
-
-  if (action === "profile") {
-    alert("Phần trang cá nhân sẽ làm ở bước sau.");
-    return;
-  }
-
   if (action === "report") {
-    alert("Phần báo cáo sẽ làm ở bước sau.");
+    alert("lLàm sau.");
   }
 };
 </script>

@@ -36,10 +36,6 @@ const menuStyle = ref({
 const menuItems = [
   { key: "mark_unread", label: "Đánh dấu là chưa đọc", icon: Mail },
   { key: "mute", label: "Tắt thông báo", icon: BellOff },
-  { key: "profile", label: "Xem trang cá nhân", icon: UserCircle },
-  { divider: true },
-  { key: "audio_call", label: "Gọi thoại", icon: Phone },
-  { key: "video_call", label: "Chat video", icon: Video },
   { key: "block", label: "Chặn", icon: Ban },
   { key: "archive", label: "Lưu trữ đoạn chat", icon: Archive },
   { key: "delete", label: "Xóa đoạn chat", icon: Trash2, danger: true },
