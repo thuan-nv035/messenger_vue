@@ -11,7 +11,18 @@ import AppToast from "../components/common/AppToast.vue";
 const auth = useAuthStore();
 const chat = useChatStore();
 
+const unlockSound = () => {
+  chat.unlockNotificationSound();
+
+  window.removeEventListener("click", unlockSound);
+  window.removeEventListener("keydown", unlockSound);
+};
+
 onMounted(async () => {
+
+  window.addEventListener("click", unlockSound);
+  window.addEventListener("keydown", unlockSound);
+  
   if (!auth.user) {
     await auth.fetchMe();
   }
@@ -24,6 +35,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("click", unlockSound);
+  window.removeEventListener("keydown", unlockSound);
   chat.disconnectWebSocket();
 });
 </script>

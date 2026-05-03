@@ -25,6 +25,11 @@ export const useChatStore = defineStore("chat", {
     callEvent: null,
     callTimeoutTimer: null,
 
+    notificationSoundEnabled:
+      localStorage.getItem("notification_sound_enabled") !== "false",
+    notificationAudioContext: null,
+    notificationSoundUnlocked: false,
+
     toast: null,
     loadingConversations: false,
     loadingMessages: false,
@@ -373,6 +378,7 @@ export const useChatStore = defineStore("chat", {
         call_status: data.call_status || null,
         created_at: data.created_at,
       };
+      const isMine = Number(message.sender_id) === Number(currentUserId);
 
       const isCurrentConversation =
         Number(this.selectedConversation?.id) === Number(data.conversation_id);
@@ -386,7 +392,7 @@ export const useChatStore = defineStore("chat", {
           this.messages.push(message);
         }
 
-        if (message.sender_id !== currentUserId) {
+        if (!isMine) {
           this.markConversationAsRead(data.conversation_id);
         }
       }
@@ -407,12 +413,27 @@ export const useChatStore = defineStore("chat", {
 
       this.updateConversationLastMessage(message);
 
-      if (
-        conversation &&
-        !isCurrentConversation &&
-        message.sender_id !== currentUserId
-      ) {
+      if (conversation && !isCurrentConversation && !isMine) {
         conversation.unread_count = (conversation.unread_count || 0) + 1;
+      }
+      if (!isMine) {
+        const targetConversation = this.conversations.find(
+          (c) => Number(c.id) === Number(message.conversation_id),
+        );
+
+        const isMuted =
+          targetConversation?.is_muted === true ||
+          targetConversation?.is_muted === 1;
+
+        if (!conversation && !isMine) {
+          this.playNotificationSound();
+
+          this.fetchConversations({
+            autoSelect: false,
+          });
+
+          return;
+        }
       }
     },
     updateConversationLastMessage(message) {
@@ -690,7 +711,6 @@ export const useChatStore = defineStore("chat", {
         this.error = "WebSocket chưa kết nối";
         return;
       }
-
       this.ws.send(
         JSON.stringify({
           type: "file",
@@ -700,6 +720,7 @@ export const useChatStore = defineStore("chat", {
           reply_to_id: replyToId,
         }),
       );
+      // this.fetchConversationMedia(this.selectedConversation.id);
     },
 
     getCurrentUserId() {
@@ -886,11 +907,62 @@ export const useChatStore = defineStore("chat", {
       }
     },
 
-    async blockUser(userId) {
+    async blockUser(userId, conversationId = null) {
       try {
-        await api.post(`/block/${userId}`);
+        const res = await api.post(`/block/${userId}`);
+
+        const hiddenConversationId = conversationId || res.data.conversation_id;
+
+        if (hiddenConversationId) {
+          this.conversations = this.conversations.filter(
+            (c) => Number(c.id) !== Number(hiddenConversationId),
+          );
+
+          if (
+            Number(this.selectedConversation?.id) ===
+            Number(hiddenConversationId)
+          ) {
+            this.selectedConversation = null;
+            this.messages = [];
+          }
+        }
+
+        this.showToast("Đã chặn người dùng", "success");
+
+        return res.data;
       } catch (err) {
         this.error = err.response?.data?.detail || "Không chặn được user";
+        this.showToast(this.error, "error");
+        throw err;
+      }
+    },
+
+    async fetchBlockedUsers() {
+      try {
+        const res = await api.get("/block/users");
+        return res.data;
+      } catch (err) {
+        this.error =
+          err.response?.data?.detail || "Không tải được danh sách chặn";
+        this.showToast(this.error, "error");
+        return [];
+      }
+    },
+
+    async unblockUser(userId) {
+      try {
+        const res = await api.delete(`/block/${userId}`);
+
+        await this.fetchConversations({
+          autoSelect: false,
+        });
+
+        this.showToast("Đã gỡ chặn người dùng", "success");
+
+        return res.data;
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không gỡ chặn được user";
+        this.showToast(this.error, "error");
         throw err;
       }
     },
@@ -1097,6 +1169,148 @@ export const useChatStore = defineStore("chat", {
         conversation_id: conversation.id,
         call_type: "audio",
       });
+    },
+
+    async unlockAudioContext() {
+      try {
+        if (!this.notificationAudioContext) {
+          this.notificationAudioContext = new AudioContext();
+        }
+
+        if (this.notificationAudioContext.state === "suspended") {
+          await this.notificationAudioContext.resume();
+        }
+
+        this.notificationSoundUnlocked = true;
+      } catch (err) {
+        console.warn("Không thể bật âm thanh thông báo:", err);
+      }
+    },
+
+    async playBeepSound() {
+      try {
+        if (!this.notificationAudioContext) {
+          this.notificationAudioContext = new AudioContext();
+        }
+
+        if (this.notificationAudioContext.state === "suspended") {
+          await this.notificationAudioContext.resume();
+        }
+
+        const ctx = this.notificationAudioContext;
+
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+
+        gain.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.2);
+      } catch (err) {
+        console.warn("Không phát được âm thanh:", err);
+      }
+    },
+
+    async unlockNotificationSound() {
+      await this.unlockAudioContext();
+    },
+
+    async playNotificationSound() {
+      if (!this.notificationSoundEnabled) return;
+
+      await this.playBeepSound();
+    },
+
+    toggleNotificationSound() {
+      this.notificationSoundEnabled = !this.notificationSoundEnabled;
+
+      localStorage.setItem(
+        "notification_sound_enabled",
+        this.notificationSoundEnabled ? "true" : "false",
+      );
+
+      this.showToast(
+        this.notificationSoundEnabled
+          ? "Đã bật âm thanh thông báo"
+          : "Đã tắt âm thanh thông báo",
+        "info",
+      );
+    },
+
+    async fetchConversationMembers(conversationId) {
+      try {
+        const res = await api.get(`/conversations/${conversationId}/settings`);
+        return res.data;
+      } catch (err) {
+        this.error =
+          err.response?.data?.detail || "Không tải được danh sách thành viên";
+        this.showToast(this.error, "error");
+        return [];
+      }
+    },
+
+    async addMembersToConversation(conversationId, userIds) {
+      try {
+        const res = await api.post(`/conversations/${conversationId}/members`, {
+          user_ids: userIds,
+        });
+
+        this.showToast("Đã thêm thành viên", "success");
+
+        return res.data;
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không thêm được thành viên";
+        this.showToast(this.error, "error");
+        throw err;
+      }
+    },
+
+    async removeMemberFromConversation(conversationId, userId) {
+      try {
+        const res = await api.delete(
+          `/conversations/${conversationId}/members/${userId}`,
+        );
+
+        this.showToast("Đã xóa thành viên khỏi nhóm", "success");
+
+        return res.data;
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không xóa được thành viên";
+        this.showToast(this.error, "error");
+        throw err;
+      }
+    },
+
+    async updateMemberRole(conversationId, userId, role) {
+      try {
+        const res = await api.patch(
+          `/conversations/${conversationId}/members/${userId}/promote-admin`,
+          {
+            role,
+          },
+        );
+
+        this.showToast(
+          role === "admin"
+            ? "Đã set làm quản trị viên"
+            : "Đã gỡ quyền quản trị viên",
+          "success",
+        );
+
+        return res.data;
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không cập nhật được quyền";
+        this.showToast(this.error, "error");
+        throw err;
+      }
     },
 
     clearChat() {

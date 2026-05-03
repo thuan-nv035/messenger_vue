@@ -14,10 +14,11 @@ import { useAuthStore } from "../../stores/auth";
 import { useChatStore } from "../../stores/chat";
 import NewConversationModal from "./NewConversationModal.vue";
 import ConversationActionMenu from "./ConversationActionMenu.vue";
+import BlockedUsersModal from "./BlockedUsersModal.vue";
 const router = useRouter();
 const auth = useAuthStore();
 const chat = useChatStore();
-
+const showBlockedUsersModal = ref(false);
 const showNewConversationModal = ref(false);
 const keyword = ref("");
 const activeTab = ref("all");
@@ -27,6 +28,10 @@ const logout = () => {
   auth.logout();
   chat.clearChat();
   router.push("/login");
+};
+
+const isMuted = (conversation) => {
+  return conversation.is_muted === true || conversation.is_muted === 1;
 };
 
 const getConversationTitle = (conversation) => {
@@ -91,13 +96,6 @@ const filteredConversations = computed(() => {
   return items;
 });
 
-const handleDeleteConversation = async (conversation) => {
-  const ok = confirm("Bạn có chắc muốn xóa cuộc trò chuyện này không?");
-
-  if (!ok) return;
-
-  await chat.deleteConversationForMe(conversation.id);
-};
 
 const selectConversation = async (conversation) => {
   await chat.selectConversation(conversation);
@@ -172,7 +170,7 @@ const handleConversationMenuAction = async ({ action, conversation }) => {
     const otherUserId = getOtherUserId(conversation);
 
     if (!otherUserId) {
-      alert("Chức năng chặn chỉ áp dụng cho chat cá nhân.");
+      chat.showToast("Chỉ có thể chặn trong chat cá nhân", "warning");
       return;
     }
 
@@ -180,7 +178,7 @@ const handleConversationMenuAction = async ({ action, conversation }) => {
 
     if (!ok) return;
 
-    await chat.blockUser(otherUserId);
+    await chat.blockUser(otherUserId, conversation.id);
     return;
   }
 
@@ -216,6 +214,7 @@ const handleConversationMenuAction = async ({ action, conversation }) => {
 
         <div class="flex items-center gap-2">
           <button
+            @click="showBlockedUsersModal = true"
             type="button"
             class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center transition"
           >
@@ -338,81 +337,72 @@ const handleConversationMenuAction = async ({ action, conversation }) => {
             </span>
           </div>
 
-          <!-- Online dot demo -->
           <div
             v-if="conversation.is_online"
             class="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-[#31d158] border-2 border-[#18191A]"
           />
         </div>
 
-        <!-- Content -->
+        <!-- Main content -->
         <div class="min-w-0 flex-1">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="text-[17px] font-semibold text-white truncate">
-                {{
-                  conversation.display_name ||
-                  conversation.name ||
-                  `Cuộc trò chuyện #${conversation.id}`
-                }}
-              </p>
-            </div>
+          <p class="text-[17px] font-semibold text-white truncate">
+            {{ getConversationTitle(conversation) }}
+          </p>
 
-            <div class="flex items-center gap-2 shrink-0">
-              <Pin
-                v-if="conversation.is_pinned"
-                class="w-4 h-4 text-gray-400"
-              />
+          <p
+            class="mt-1 text-[15px] truncate"
+            :class="
+              (conversation.unread_count || 0) > 0
+                ? 'text-white font-medium'
+                : 'text-gray-400'
+            "
+          >
+            {{ getLastMessagePreview(conversation) }}
+          </p>
+        </div>
 
-              <VolumeX
-                v-if="conversation.is_muted"
-                class="w-4 h-4 text-gray-400"
-              />
-            </div>
-          </div>
-
-          <div class="mt-1 flex items-center justify-between gap-2">
-            <p
-              class="text-[15px] truncate"
-              :class="
-                (conversation.unread_count || 0) > 0
-                  ? 'text-white font-medium'
-                  : 'text-gray-400'
-              "
+        <!-- Right meta -->
+        <div
+          class="w-[72px] shrink-0 flex flex-col items-end justify-center gap-2"
+        >
+          <div class="h-7 flex items-center justify-end">
+            <button
+              type="button"
+              class="w-8 h-8 rounded-full hover:bg-white/10 hidden group-hover:flex items-center justify-center"
+              @click="openConversationMenu($event, conversation)"
             >
-              {{ getLastMessagePreview(conversation) }}
-            </p>
+              <Ellipsis class="w-5 h-5 text-gray-300" />
+            </button>
 
-            <div class="shrink-0 flex items-center gap-2">
-              <span class="text-[14px] text-gray-400">
-                {{
-                  formatTime(
-                    conversation.last_message?.created_at ||
-                      conversation.created_at,
-                  )
-                }}
-              </span>
+            <span
+              v-if="!isMuted(conversation)"
+              class="text-[14px] text-gray-400 group-hover:hidden"
+            >
+              {{
+                formatTime(
+                  conversation.last_message?.created_at ||
+                    conversation.created_at,
+                )
+              }}
+            </span>
 
-              <span
-                v-if="(conversation.unread_count || 0) > 0"
-                class="min-w-6 h-6 px-1 rounded-full bg-[#2d88ff] text-white text-[12px] font-semibold flex items-center justify-center"
-              >
-                {{
-                  conversation.unread_count > 99
-                    ? "99+"
-                    : conversation.unread_count
-                }}
-              </span>
-
-              <button
-                type="button"
-                class="w-8 h-8 rounded-full hover:bg-white/10 hidden group-hover:flex items-center justify-center"
-                @click="openConversationMenu($event, conversation)"
-              >
-                <Ellipsis class="w-5 h-5 text-gray-300" />
-              </button>
+            <div
+              v-else
+              class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:hidden"
+              title="Đã tắt thông báo"
+            >
+              <VolumeX class="w-4 h-4 text-gray-400" />
             </div>
           </div>
+
+          <span
+            v-if="(conversation.unread_count || 0) > 0"
+            class="min-w-6 h-6 px-1 rounded-full bg-[#2d88ff] text-white text-[12px] font-semibold flex items-center justify-center"
+          >
+            {{
+              conversation.unread_count > 99 ? "99+" : conversation.unread_count
+            }}
+          </span>
         </div>
       </button>
 
@@ -423,6 +413,11 @@ const handleConversationMenuAction = async ({ action, conversation }) => {
         Không có cuộc trò chuyện nào
       </div>
     </div>
+
+    <BlockedUsersModal
+      v-if="showBlockedUsersModal"
+      @close="showBlockedUsersModal = false"
+    />
 
     <ConversationActionMenu
       v-if="openedMenuConversation"
