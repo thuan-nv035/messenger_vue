@@ -387,6 +387,7 @@ const startAudioCall = () => {
           </button>
 
           <button
+            @click="chat.handleActiveInfo"
             type="button"
             class="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition"
           >

@@ -4,6 +4,7 @@ import axios from "axios";
 
 export const useChatStore = defineStore("chat", {
   state: () => ({
+    isActiveChatInfo: true,
     conversations: [],
     selectedConversation: null,
     messages: [],
@@ -32,6 +33,10 @@ export const useChatStore = defineStore("chat", {
       localStorage.getItem("notification_sound_enabled") !== "false",
     notificationAudioContext: null,
     notificationSoundUnlocked: false,
+
+    groupIncomingCall: null,
+    activeGroupCall: null,
+    groupCallEvent: null,
 
     toast: null,
     loadingConversations: false,
@@ -360,6 +365,106 @@ export const useChatStore = defineStore("chat", {
         this.error = data.message;
 
         this.showToast(data.message || "Không thể thực hiện cuộc gọi", "error");
+
+        return;
+      }
+
+      if (data.type === "group_incoming_call") {
+        this.groupIncomingCall = data;
+        return;
+      }
+
+      if (data.type === "group_call_started") {
+        this.activeGroupCall = {
+          call_id: data.call_id,
+          conversation_id: data.conversation_id,
+          call_type: data.call_type || "video",
+          participants: data.participants || [],
+          isCaller: true,
+          status: "calling",
+        };
+
+        this.groupCallEvent = {
+          type: "group_call_started",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "group_call_joined") {
+        if (this.activeGroupCall) {
+          this.activeGroupCall.status = "joined";
+          this.activeGroupCall.participants = data.participants || [];
+        }
+
+        this.groupCallEvent = {
+          type: "group_call_joined",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "group_user_joined") {
+        if (this.activeGroupCall) {
+          const exists = this.activeGroupCall.participants?.includes(
+            data.user_id,
+          );
+
+          if (!exists) {
+            this.activeGroupCall.participants.push(data.user_id);
+          }
+        }
+
+        this.groupCallEvent = {
+          type: "group_user_joined",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "group_user_left") {
+        if (this.activeGroupCall) {
+          this.activeGroupCall.participants =
+            this.activeGroupCall.participants?.filter(
+              (id) => Number(id) !== Number(data.user_id),
+            ) || [];
+        }
+
+        this.groupCallEvent = {
+          type: "group_user_left",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (
+        data.type === "group_webrtc_offer" ||
+        data.type === "group_webrtc_answer" ||
+        data.type === "group_ice_candidate"
+      ) {
+        this.groupCallEvent = {
+          type: data.type,
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "group_call_rejected") {
+        this.groupCallEvent = {
+          type: "group_call_rejected",
+          data,
+          ts: Date.now(),
+        };
 
         return;
       }
@@ -1356,12 +1461,110 @@ export const useChatStore = defineStore("chat", {
 
     async createInviteLink(conversationId) {
       try {
-        const res = await api.post(`/group-invites/conversations/${conversationId}`)
-        console.log(res)
-      }catch(err) {
-        this.showToast('Bạn không có quyền tạo link', 'error')
-        throw err
+        const res = await api.post(
+          `/group-invites/conversations/${conversationId}`,
+        );
+        console.log(res);
+      } catch (err) {
+        this.showToast("Bạn không có quyền tạo link", "error");
+        throw err;
       }
+    },
+
+    handleActiveInfo() {
+      this.isActiveChatInfo = !this.isActiveChatInfo;
+    },
+
+    startGroupVideoCall(conversation) {
+      if (!conversation || Number(conversation.is_group) !== 1) {
+        this.showToast("Chỉ gọi video nhóm trong group chat", "warning");
+        return;
+      }
+
+      this.sendSocket({
+        type: "group_call_request",
+        conversation_id: conversation.id,
+        call_type: "video",
+      });
+    },
+
+    acceptGroupCall() {
+      if (!this.groupIncomingCall) return;
+
+      const call = this.groupIncomingCall;
+
+      this.activeGroupCall = {
+        call_id: call.call_id,
+        conversation_id: call.conversation_id,
+        call_type: call.call_type || "video",
+        participants: [],
+        isCaller: false,
+        status: "joining",
+      };
+
+      this.sendSocket({
+        type: "group_call_join",
+        call_id: call.call_id,
+        conversation_id: call.conversation_id,
+      });
+
+      this.groupIncomingCall = null;
+    },
+
+    rejectGroupCall() {
+      if (!this.groupIncomingCall) return;
+
+      const call = this.groupIncomingCall;
+
+      this.sendSocket({
+        type: "group_call_reject",
+        call_id: call.call_id,
+        conversation_id: call.conversation_id,
+      });
+
+      this.groupIncomingCall = null;
+    },
+
+    leaveGroupCall() {
+      if (!this.activeGroupCall) return;
+
+      this.sendSocket({
+        type: "group_call_leave",
+        call_id: this.activeGroupCall.call_id,
+        conversation_id: this.activeGroupCall.conversation_id,
+      });
+
+      this.activeGroupCall = null;
+    },
+
+    sendGroupWebRTCOffer(targetUserId, offer) {
+      this.sendSocket({
+        type: "group_webrtc_offer",
+        call_id: this.activeGroupCall?.call_id,
+        conversation_id: this.activeGroupCall?.conversation_id,
+        target_user_id: targetUserId,
+        offer,
+      });
+    },
+
+    sendGroupWebRTCAnswer(targetUserId, answer) {
+      this.sendSocket({
+        type: "group_webrtc_answer",
+        call_id: this.activeGroupCall?.call_id,
+        conversation_id: this.activeGroupCall?.conversation_id,
+        target_user_id: targetUserId,
+        answer,
+      });
+    },
+
+    sendGroupIceCandidate(targetUserId, candidate) {
+      this.sendSocket({
+        type: "group_ice_candidate",
+        call_id: this.activeGroupCall?.call_id,
+        conversation_id: this.activeGroupCall?.conversation_id,
+        target_user_id: targetUserId,
+        candidate,
+      });
     },
 
     clearChat() {

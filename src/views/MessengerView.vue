@@ -45,7 +45,7 @@ onBeforeUnmount(() => {
   <div class="h-screen w-screen overflow-hidden bg-[#111214] flex">
     <ChatSidebar />
     <ChatWindow />
-    <ChatInfoPanel />
+    <ChatInfoPanel v-if="chat.isActiveChatInfo" />
     <VideoCallModal />
     <AppToast />
   </div>
