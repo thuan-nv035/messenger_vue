@@ -364,7 +364,7 @@ const startAudioCall = () => {
               class="text-[13px]"
               :class="chat.isOnline ? 'text-[#31d158]' : 'text-gray-400'"
             >
-              {{ chat.isOnline ? "Đang hoạt động" : "Không hoạt động" }}
+              {{ chat.isOnline ? "Đang hoạt động" : "" }}
             </p>
           </div>
         </div>

@@ -1,6 +1,13 @@
 <script setup>
 import { computed, ref } from "vue";
-import { Reply, Pencil, RotateCcw, SmilePlus, Video, PhoneMissed } from "lucide-vue-next";
+import {
+  Reply,
+  Pencil,
+  RotateCcw,
+  SmilePlus,
+  Video,
+  PhoneMissed,
+} from "lucide-vue-next";
 import { useAuthStore } from "../../stores/auth";
 
 const props = defineProps({
@@ -85,20 +92,16 @@ const isCallMessage = computed(() => {
 </script>
 
 <template>
-  <div
-    v-if="isCallMessage"
-    class="w-full flex justify-center my-4"
-  >
-    <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-[#3A3B3C] text-gray-300 text-sm">
+  <div v-if="isCallMessage" class="w-full flex justify-center my-4">
+    <div
+      class="flex items-center gap-2 px-4 py-2 rounded-full bg-[#3A3B3C] text-gray-300 text-sm"
+    >
       <Video
         v-if="message.call_status === 'ended'"
         class="w-4 h-4 text-[#2d88ff]"
       />
 
-      <PhoneMissed
-        v-else
-        class="w-4 h-4 text-red-400"
-      />
+      <PhoneMissed v-else class="w-4 h-4 text-red-400" />
 
       <span>
         {{ message.content }}
@@ -180,8 +183,7 @@ const isCallMessage = computed(() => {
       <!-- Reactions -->
       <div
         v-if="visibleReactions.length > 0"
-        class="absolute -bottom-2 bg-[#242526] border border-white/10 shadow-md rounded-full px-1.5 py-0.5 flex items-center gap-0.5 text-xs z-10"
-        :class="isMine ? 'right-2' : 'left-2'"
+        class="absolute shadow-md rounded-full flex right-0 bottom-3 items-center gap-0.5 text-xs z-10"
       >
         <span v-for="r in visibleReactions" :key="r.type">
           {{ r.icon }}
