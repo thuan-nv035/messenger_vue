@@ -52,7 +52,7 @@ export const useChatStore = defineStore("chat", {
         this.error = "";
 
         const res = await api.get("/conversations");
-        console.log("res.data", res.data);
+        // console.log("res.data", res.data);
         this.conversations = res.data;
         if (
           autoSelect &&
@@ -959,13 +959,11 @@ export const useChatStore = defineStore("chat", {
     },
     async searchUsers(q = "") {
       try {
-        const res = await api.get("/users/search", {
+        const res = await api.get("/friends/list", {
           params: {
             q,
-            limit: 20,
           },
         });
-        console.log("res.data", res.data);
         return res.data;
       } catch (err) {
         this.error = err.response?.data?.detail || "Không tìm được user";

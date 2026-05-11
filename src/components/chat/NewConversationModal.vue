@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from "vue";
 import { X, Search, Check } from "lucide-vue-next";
 import { useChatStore } from "../../stores/chat";
-
+import { FriendRequestStatus } from "../../api/friends";
 const emit = defineEmits(["close"]);
 
 const chat = useChatStore();
@@ -42,11 +42,19 @@ const isSelected = (user) => {
   return selectedUsers.value.some((u) => Number(u.id) === Number(user.id));
 };
 
+const priority = {
+  'friends': 1,
+  'request_sent': 2,
+  'request_received': 3,
+  'not_friend': 4
+};
+
 const loadUsers = async () => {
   loadingUsers.value = true;
 
   try {
     users.value = await chat.searchUsers(searchText.value);
+    // users.value = res.sort((a, b) => priority[a.friendship_status] - priority[b.friendship_status]);
   } finally {
     loadingUsers.value = false;
   }
@@ -79,7 +87,7 @@ const toggleUser = (user) => {
 
   if (isSelected(user)) {
     selectedUsers.value = selectedUsers.value.filter(
-      (u) => Number(u.id) !== Number(user.id)
+      (u) => Number(u.id) !== Number(user.id),
     );
   } else {
     selectedUsers.value.push(user);
@@ -88,7 +96,7 @@ const toggleUser = (user) => {
 
 const removeSelectedUser = (user) => {
   selectedUsers.value = selectedUsers.value.filter(
-    (u) => Number(u.id) !== Number(user.id)
+    (u) => Number(u.id) !== Number(user.id),
   );
 };
 
@@ -133,16 +141,37 @@ const handleCreate = async () => {
     loadingCreate.value = false;
   }
 };
+
+const handleSendRequestFriends = async (user) => {
+  try {
+    if(user.friendship_status === 'request_received') {
+      await FriendRequestStatus.acceptFriendRequest(user.friend_request_id);
+    } else if(user.friendship_status === 'not_friend') {
+      await FriendRequestStatus.sendFriendRequest(user.id);
+    } else if(user.friendship_status === 'request_sent') {
+      await FriendRequestStatus.cancelFriendRequest(user.friend_request_id);
+    } else if(user.friendship_status === 'friends') {
+      await FriendRequestStatus.cancelFriendRequest(user.friend_request_id);
+    }
+    await loadUsers();
+  } catch (err) {
+    throw err
+  }
+};
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4">
-    <div class="bg-[#242526] text-white w-full max-w-xl rounded-2xl shadow-xl overflow-hidden border border-white/10">
+  <div
+    class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4"
+  >
+    <div
+      class="bg-[#242526] text-white w-full max-w-xl rounded-2xl shadow-xl overflow-hidden border border-white/10"
+    >
       <!-- Header -->
-      <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
-        <h2 class="text-lg font-semibold">
-          Tạo cuộc trò chuyện mới
-        </h2>
+      <div
+        class="px-5 py-4 border-b border-white/10 flex items-center justify-between"
+      >
+        <h2 class="text-lg font-semibold">Tạo cuộc trò chuyện mới</h2>
 
         <button
           type="button"
@@ -164,9 +193,11 @@ const handleCreate = async () => {
             <button
               type="button"
               class="py-3 rounded-xl border text-sm font-semibold transition"
-              :class="mode === 'private'
-                ? 'bg-[#2d88ff] text-white border-[#2d88ff]'
-                : 'bg-transparent text-gray-300 border-white/10 hover:bg-white/10'"
+              :class="
+                mode === 'private'
+                  ? 'bg-[#2d88ff] text-white border-[#2d88ff]'
+                  : 'bg-transparent text-gray-300 border-white/10 hover:bg-white/10'
+              "
               @click="mode = 'private'"
             >
               Chat cá nhân
@@ -175,9 +206,11 @@ const handleCreate = async () => {
             <button
               type="button"
               class="py-3 rounded-xl border text-sm font-semibold transition"
-              :class="mode === 'group'
-                ? 'bg-[#2d88ff] text-white border-[#2d88ff]'
-                : 'bg-transparent text-gray-300 border-white/10 hover:bg-white/10'"
+              :class="
+                mode === 'group'
+                  ? 'bg-[#2d88ff] text-white border-[#2d88ff]'
+                  : 'bg-transparent text-gray-300 border-white/10 hover:bg-white/10'
+              "
               @click="mode = 'group'"
             >
               Nhóm
@@ -219,7 +252,9 @@ const handleCreate = async () => {
             Chọn người dùng
           </label>
 
-          <div class="h-12 rounded-xl bg-[#3A3B3C] border border-white/10 flex items-center px-4 gap-3">
+          <div
+            class="h-12 rounded-xl bg-[#3A3B3C] border border-white/10 flex items-center px-4 gap-3"
+          >
             <Search class="w-5 h-5 text-gray-400" />
 
             <input
@@ -233,10 +268,7 @@ const handleCreate = async () => {
 
         <!-- User list -->
         <div class="max-h-72 overflow-y-auto space-y-1 pr-1">
-          <div
-            v-if="loadingUsers"
-            class="text-center text-gray-400 py-6"
-          >
+          <div v-if="loadingUsers" class="text-center text-gray-400 py-6">
             Đang tải người dùng...
           </div>
 
@@ -252,12 +284,12 @@ const handleCreate = async () => {
             :key="user.id"
             type="button"
             class="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition"
-            :class="isSelected(user)
-              ? 'bg-[#263951]'
-              : 'hover:bg-white/10'"
+            :class="isSelected(user) ? 'bg-[#263951]' : 'hover:bg-white/10'"
             @click="toggleUser(user)"
           >
-            <div class="w-11 h-11 rounded-full bg-gradient-to-br from-[#5f8dff] to-[#3f5df3] overflow-hidden flex items-center justify-center text-white font-semibold shrink-0">
+            <div
+              class="w-11 h-11 rounded-full bg-gradient-to-br from-[#5f8dff] to-[#3f5df3] overflow-hidden flex items-center justify-center text-white font-semibold shrink-0"
+            >
               <img
                 v-if="avatarUrl(user)"
                 :src="avatarUrl(user)"
@@ -274,16 +306,33 @@ const handleCreate = async () => {
                 {{ user.full_name }}
               </p>
 
-              <p class="text-sm text-gray-400 truncate">
+              <!-- <p class="text-sm text-gray-400 truncate">
                 {{ user.email }}
-              </p>
+              </p> -->
             </div>
 
-            <div
+            <!-- <div
               v-if="isSelected(user)"
               class="w-7 h-7 rounded-full bg-[#2d88ff] flex items-center justify-center shrink-0"
             >
               <Check class="w-4 h-4 text-white" />
+            </div> -->
+
+            <div
+              @click.stop="handleSendRequestFriends(user)"
+              class="px-2 py-1 rounded-lg"
+              :class="{
+                'bg-[#2d88ff] text-white': user.friendship_status === 'not_friend',
+                'bg-[#4CAF50] text-white': user.friendship_status === 'request_sent',
+                'bg-[#FF9800] text-white': user.friendship_status === 'request_received',
+                'bg-[#f44336] text-white': user.friendship_status === 'friends'
+              }"
+            >
+              {{ user.friendship_status === 'not_friend' ? 'Thêm bạn bè' : 
+                user.friendship_status === 'request_sent' ? 'Đã gửi yêu cầu' :
+                user.friendship_status === 'request_received' ? 'Chấp nhận yêu cầu' :
+                'Hủy kết bạn'
+              }}
             </div>
           </button>
         </div>
