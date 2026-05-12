@@ -43,10 +43,10 @@ const isSelected = (user) => {
 };
 
 const priority = {
-  'friends': 1,
-  'request_sent': 2,
-  'request_received': 3,
-  'not_friend': 4
+  friends: 1,
+  request_sent: 2,
+  request_received: 3,
+  not_friend: 4,
 };
 
 const loadUsers = async () => {
@@ -144,20 +144,27 @@ const handleCreate = async () => {
 
 const handleSendRequestFriends = async (user) => {
   try {
-    if(user.friendship_status === 'request_received') {
+    if (user.friendship_status === "request_received") {
       await FriendRequestStatus.acceptFriendRequest(user.friend_request_id);
-    } else if(user.friendship_status === 'not_friend') {
+    } else if (user.friendship_status === "not_friend") {
       await FriendRequestStatus.sendFriendRequest(user.id);
-    } else if(user.friendship_status === 'request_sent') {
-      await FriendRequestStatus.cancelFriendRequest(user.friend_request_id);
-    } else if(user.friendship_status === 'friends') {
+    } else if (user.friendship_status === "request_sent") {
       await FriendRequestStatus.cancelFriendRequest(user.friend_request_id);
     }
     await loadUsers();
   } catch (err) {
-    throw err
+    throw err;
   }
 };
+
+watch(
+  () => chat.friendEvent,
+  async (newVal) => {
+    if (newVal) {
+      await loadUsers();
+    }
+  },
+);
 </script>
 
 <template>
@@ -305,10 +312,14 @@ const handleSendRequestFriends = async (user) => {
               <p class="font-semibold text-white truncate">
                 {{ user.full_name }}
               </p>
-
-              <!-- <p class="text-sm text-gray-400 truncate">
-                {{ user.email }}
-              </p> -->
+              <p
+                v-if="
+                  mode === 'private' && user.friendship_status !== 'friends'
+                "
+                class="text-xs text-yellow-400 mt-1"
+              >
+                Chưa là bạn bè · Tin nhắn sẽ vào tin nhắn chờ
+              </p>
             </div>
 
             <!-- <div
@@ -322,16 +333,22 @@ const handleSendRequestFriends = async (user) => {
               @click.stop="handleSendRequestFriends(user)"
               class="px-2 py-1 rounded-lg"
               :class="{
-                'bg-[#2d88ff] text-white': user.friendship_status === 'not_friend',
-                'bg-[#4CAF50] text-white': user.friendship_status === 'request_sent',
-                'bg-[#FF9800] text-white': user.friendship_status === 'request_received',
-                'bg-[#f44336] text-white': user.friendship_status === 'friends'
+                'bg-[#2d88ff] text-white':
+                  user.friendship_status === 'not_friend',
+                'bg-[#4CAF50] text-white':
+                  user.friendship_status === 'request_sent',
+                'bg-[#FF9800] text-white':
+                  user.friendship_status === 'request_received',
               }"
             >
-              {{ user.friendship_status === 'not_friend' ? 'Thêm bạn bè' : 
-                user.friendship_status === 'request_sent' ? 'Đã gửi yêu cầu' :
-                user.friendship_status === 'request_received' ? 'Chấp nhận yêu cầu' :
-                'Hủy kết bạn'
+              {{
+                user.friendship_status === "not_friend"
+                  ? "Thêm bạn bè"
+                  : user.friendship_status === "request_sent"
+                    ? "Đã gửi yêu cầu"
+                    : user.friendship_status === "request_received"
+                      ? "Chấp nhận yêu cầu"
+                      : ""
               }}
             </div>
           </button>

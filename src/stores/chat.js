@@ -42,6 +42,8 @@ export const useChatStore = defineStore("chat", {
     loadingConversations: false,
     loadingMessages: false,
     error: "",
+
+    friendEvent: null,
   }),
 
   actions: {
@@ -462,6 +464,50 @@ export const useChatStore = defineStore("chat", {
       if (data.type === "group_call_rejected") {
         this.groupCallEvent = {
           type: "group_call_rejected",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "friend_request_received") {
+        this.showToast(
+          `${data.user?.full_name || "Có người"} đã gửi lời mời kết bạn`,
+          "info",
+        );
+
+        this.friendEvent = {
+          type: "friend_request_received",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (data.type === "friend_request_accepted") {
+        this.showToast(
+          `${data.user?.full_name || "Người dùng"} đã chấp nhận lời mời kết bạn`,
+          "success",
+        );
+
+        this.friendEvent = {
+          type: "friend_request_accepted",
+          data,
+          ts: Date.now(),
+        };
+
+        return;
+      }
+
+      if (
+        data.type === "friend_status_changed" ||
+        data.type === "friend_request_rejected" ||
+        data.type === "friend_request_cancelled"
+      ) {
+        this.friendEvent = {
+          type: data.type,
           data,
           ts: Date.now(),
         };
@@ -922,7 +968,17 @@ export const useChatStore = defineStore("chat", {
           is_group: isGroup,
         });
 
-        await this.fetchConversations();
+        await this.fetchConversations({
+          autoSelect: false,
+        });
+
+        if (res.data.status === "request") {
+          this.showToast(
+            "Người này chưa là bạn bè. Tin nhắn đã vào Tin nhắn chờ.",
+            "info",
+          );
+          return res.data;
+        }
 
         const conversation = this.conversations.find(
           (c) => Number(c.id) === Number(res.data.conversation_id),
@@ -936,6 +992,7 @@ export const useChatStore = defineStore("chat", {
       } catch (err) {
         this.error =
           err.response?.data?.detail || "Không tạo được cuộc trò chuyện";
+        this.showToast(this.error, "error");
         throw err;
       }
     },
@@ -1563,6 +1620,54 @@ export const useChatStore = defineStore("chat", {
         target_user_id: targetUserId,
         candidate,
       });
+    },
+
+    async fetchMessageRequests() {
+      try {
+        const res = await api.get("/message-requests");
+        return res.data;
+      } catch (err) {
+        this.error =
+          err.response?.data?.detail || "Không tải được tin nhắn chờ";
+        this.showToast(this.error, "error");
+        return [];
+      }
+    },
+
+    async acceptMessageRequest(conversationId) {
+      try {
+        const res = await api.patch(
+          `/message-requests/${conversationId}/accept`,
+        );
+
+        await this.fetchConversations({
+          autoSelect: false,
+        });
+
+        this.showToast("Đã chấp nhận tin nhắn chờ", "success");
+
+        return res.data;
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không chấp nhận được";
+        this.showToast(this.error, "error");
+        throw err;
+      }
+    },
+
+    async rejectMessageRequest(conversationId) {
+      try {
+        const res = await api.patch(
+          `/message-requests/${conversationId}/reject`,
+        );
+
+        this.showToast("Đã từ chối tin nhắn chờ", "success");
+
+        return res.data;
+      } catch (err) {
+        this.error = err.response?.data?.detail || "Không từ chối được";
+        this.showToast(this.error, "error");
+        throw err;
+      }
     },
 
     clearChat() {

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
   Search,
@@ -23,7 +23,7 @@ const showNewConversationModal = ref(false);
 const keyword = ref("");
 const activeTab = ref("all");
 const apiUrl = import.meta.env.VITE_API_URL;
-
+const messageRequests = ref([]);
 const logout = () => {
   chat.disconnectWebSocket();
   auth.logout();
@@ -75,7 +75,9 @@ const getLastMessagePreview = (conversation) => {
 };
 
 const filteredConversations = computed(() => {
-  let items = [...chat.conversations];
+  let items = activeTab.value === "requests"
+    ? [...messageRequests.value]
+    : [...chat.conversations];
 
   if (activeTab.value === "unread") {
     items = items.filter((c) => (c.unread_count || 0) > 0);
@@ -87,16 +89,17 @@ const filteredConversations = computed(() => {
 
   if (keyword.value.trim()) {
     const q = keyword.value.trim().toLowerCase();
+
     items = items.filter((c) => {
-      const name = c.name?.toLowerCase() || "";
+      const name = getConversationTitle(c).toLowerCase();
       const preview = getLastMessagePreview(c).toLowerCase();
+
       return name.includes(q) || preview.includes(q);
     });
   }
 
   return items;
 });
-
 
 const selectConversation = async (conversation) => {
   await chat.selectConversation(conversation);
@@ -187,6 +190,16 @@ const handleConversationMenuAction = async ({ action, conversation }) => {
     alert("lLàm sau.");
   }
 };
+
+const loadMessageRequests = async () => {
+  messageRequests.value = await chat.fetchMessageRequests();
+};
+
+watch(activeTab, async (tab) => {
+  if (tab === "requests") {
+    await loadMessageRequests();
+  }
+});
 </script>
 
 <template>
@@ -277,6 +290,19 @@ const handleConversationMenuAction = async ({ action, conversation }) => {
           @click="activeTab = 'group'"
         >
           Nhóm
+        </button>
+
+        <button
+          type="button"
+          class="px-4 h-10 rounded-full text-[15px] font-semibold transition"
+          :class="
+            activeTab === 'requests'
+              ? 'bg-[#263951] text-[#5aa7ff]'
+              : 'text-gray-200 hover:bg-white/10'
+          "
+          @click="activeTab = 'requests'"
+        >
+          Tin nhắn chờ
         </button>
 
         <button

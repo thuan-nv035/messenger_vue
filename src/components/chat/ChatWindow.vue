@@ -332,6 +332,37 @@ const startAudioCall = () => {
 
   chat.startAudioCall(chat.selectedConversation);
 };
+
+const handleAcceptRequest = async () => {
+  if (!chat.selectedConversation) return;
+
+  const conversationId = chat.selectedConversation.id;
+
+  await chat.acceptMessageRequest(conversationId);
+
+  const conversation = chat.conversations.find(
+    (c) => Number(c.id) === Number(conversationId)
+  );
+
+  if (conversation) {
+    await chat.selectConversation(conversation);
+  }
+};
+
+const handleRejectRequest = async () => {
+  if (!chat.selectedConversation) return;
+
+  const ok = confirm("Bạn có chắc muốn từ chối tin nhắn chờ này không?");
+
+  if (!ok) return;
+
+  const conversationId = chat.selectedConversation.id;
+
+  await chat.rejectMessageRequest(conversationId);
+
+  chat.selectedConversation = null;
+  chat.messages = [];
+};
 </script>
 
 <template>
@@ -454,6 +485,27 @@ const startAudioCall = () => {
           {{ typingText }}
         </div>
       </section>
+
+      <div
+        v-if="chat.selectedConversation?.status === 'request'"
+        class="border-t border-white/10 bg-[#242526] px-5 py-4 flex items-center justify-center gap-3"
+      >
+        <button
+          type="button"
+          class="px-5 py-2 rounded-xl bg-[#2d88ff] text-white font-semibold hover:bg-[#1f6fd1]"
+          @click="handleAcceptRequest"
+        >
+          Chấp nhận
+        </button>
+
+        <button
+          type="button"
+          class="px-5 py-2 rounded-xl bg-red-500/20 text-red-300 font-semibold hover:bg-red-500/30"
+          @click="handleRejectRequest"
+        >
+          Từ chối
+        </button>
+      </div>
 
       <!-- Footer -->
       <footer class="border-t border-white/10 bg-[#242526] px-5 py-4">
